@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.services.github_client import GitHubAPIError
 from app.services.github_service import get_user_repositories
 from app.services.skill_service import analyze_skills
 from app.services.issue_service import search_github_issues
@@ -14,7 +15,13 @@ router = APIRouter(
 
 @router.get("/users/{username}/issues")
 async def get_matched_issues(username: str):
-    repositories = await get_user_repositories(username)
+    try:
+        repositories = await get_user_repositories(username)
+    except GitHubAPIError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.message,
+        ) from exc
 
     if repositories is None:
         raise HTTPException(
@@ -37,6 +44,7 @@ async def get_matched_issues(username: str):
         }
 
     all_issues = []
+    rate_limited = False
 
     # Search issues for the user's top skills.
     for skill in user_skills[:5]:
@@ -61,10 +69,24 @@ async def get_matched_issues(username: str):
                     }
                 )
 
+        except GitHubAPIError as exc:
+            if exc.rate_limited:
+                rate_limited = True
+                break
+            continue
         except Exception:
             # One failed language search should not
             # break the entire recommendation request.
             continue
+
+    if rate_limited and not all_issues:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "GitHub API rate limit reached. "
+                "Please try again in a few minutes."
+            ),
+        )
 
     # Remove duplicate issues.
     unique_issues = {}
@@ -84,4 +106,5 @@ async def get_matched_issues(username: str):
         "username": username,
         "skills": user_skills,
         "recommendations": recommendations[:20],
+        "rate_limited": rate_limited,
     }

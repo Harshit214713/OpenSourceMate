@@ -90,8 +90,9 @@ OpenSourceMate/
 ### Backend
 
 * Python
-* Django
-* Django REST Framework
+* FastAPI
+* Uvicorn
+* Pydantic
 
 ### AI / Data
 
@@ -180,23 +181,61 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Then start the backend using the project's configured Django development entry point.
+Start the FastAPI backend server:
 
-> Backend setup is currently evolving. More detailed setup instructions and environment configuration will be documented as the project develops.
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+The backend API will be available at:
+
+```text
+http://localhost:8000
+```
+
+Interactive API documentation (Swagger UI) is available at `http://localhost:8000/docs`.
+---
+
+## 4. Run automated tests
+
+Run unit tests for backend skill analysis and matching score:
+
+```bash
+cd backend
+pytest
+```
+
+Or using Python's built-in test runner:
+
+```bash
+python -m unittest discover -s tests
+```
+
 
 ---
 
 ## 🔐 Environment Variables
 
-If a feature requires external services or API credentials, configure them through environment variables rather than committing secrets to the repository.
+OpenSourceMate uses environment variables for configuration. Example templates are provided for both backend and frontend:
 
-Example:
+- Backend: [`backend/.env.example`](backend/.env.example)
+- Frontend: [`frontend/.env.example`](frontend/.env.example)
+
+### Backend (`backend/.env`)
 
 ```env
-# Example only — use the variables required by the current backend configuration.
-GITHUB_TOKEN=
-GOOGLE_API_KEY=
-OPENAI_API_KEY=
+# Optional — increases GitHub API rate limits for profile and issue search
+GITHUB_TOKEN=your_github_token_here
+
+# Optional — used for AI-assisted features
+# GOOGLE_API_KEY=
+# OPENAI_API_KEY=
+```
+
+### Frontend (`frontend/.env.local`)
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 **Never commit API keys, passwords, tokens, or other secrets to Git.**
@@ -285,7 +324,7 @@ Then open a pull request describing:
 * How you tested it
 * Any relevant screenshots or examples
 
-> A detailed `CONTRIBUTING.md` will be added as the contributor workflow matures.
+For full guidelines on local setup, branch conventions, PR processes, and coding standards, please see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

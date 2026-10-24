@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.services.github_client import GitHubAPIError
 from app.services.github_service import (
     get_github_user,
     get_user_repositories,
@@ -13,9 +14,16 @@ router = APIRouter(
 )
 
 
+def _http_error_from_github(exc: GitHubAPIError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
 @router.get("/users/{username}")
 async def get_user(username: str):
-    user = await get_github_user(username)
+    try:
+        user = await get_github_user(username)
+    except GitHubAPIError as exc:
+        raise _http_error_from_github(exc) from exc
 
     if user is None:
         raise HTTPException(
@@ -37,7 +45,10 @@ async def get_user(username: str):
 
 @router.get("/users/{username}/repositories")
 async def get_repositories(username: str):
-    repositories = await get_user_repositories(username)
+    try:
+        repositories = await get_user_repositories(username)
+    except GitHubAPIError as exc:
+        raise _http_error_from_github(exc) from exc
 
     if repositories is None:
         raise HTTPException(
@@ -66,7 +77,10 @@ async def get_repositories(username: str):
 
 @router.get("/users/{username}/skills")
 async def get_user_skills(username: str):
-    repositories = await get_user_repositories(username)
+    try:
+        repositories = await get_user_repositories(username)
+    except GitHubAPIError as exc:
+        raise _http_error_from_github(exc) from exc
 
     if repositories is None:
         raise HTTPException(
