@@ -52,11 +52,15 @@ export default function Home() {
 const [theme, setTheme] = useState<"dark" | "light">("dark");
 
 useEffect(() => {
-  const savedTheme = localStorage.getItem("theme");
+  const timer = setTimeout(() => {
+    const savedTheme = localStorage.getItem("theme");
 
-  if (savedTheme === "light" || savedTheme === "dark") {
-    setTheme(savedTheme);
-  }
+    if (savedTheme === "light" || savedTheme === "dark") {
+      setTheme(savedTheme);
+    }
+  }, 0);
+
+  return () => clearTimeout(timer);
 }, []);
 
 useEffect(() => {
