@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.services.github_service import (
     GitHubRateLimitError,
@@ -6,7 +6,8 @@ from app.services.github_service import (
 )
 from app.services.skill_service import analyze_skills
 from app.services.issue_service import search_github_issues
-from app.services.matching_service import calculate_issue_score
+from app.services.embedding_service import similarities
+from app.services.matching_service import build_idf, calculate_issue_score
 
 
 router = APIRouter(
@@ -16,7 +17,10 @@ router = APIRouter(
 
 
 @router.get("/users/{username}/issues")
-async def get_matched_issues(username: str):
+async def get_matched_issues(
+    username: str,
+    exclude_stale: bool = Query(default=False),
+):
     repositories = await get_user_repositories(username)
 
     if repositories is None:
@@ -32,6 +36,19 @@ async def get_matched_issues(username: str):
         for skill in skill_data["skills"]
     ]
 
+    # Relative weight of each skill, so a main language counts for more than a side one.
+    max_count = max(
+        (skill["repository_count"] for skill in skill_data["skills"]),
+        default=1,
+    )
+    weighted_skills = [
+        {
+            "name": skill["name"],
+            "weight": skill["repository_count"] / max_count,
+        }
+        for skill in skill_data["skills"]
+    ]
+
     if not user_skills:
         return {
             "username": username,
@@ -39,7 +56,7 @@ async def get_matched_issues(username: str):
             "recommendations": [],
         }
 
-    all_issues = []
+    found_issues = []
 
     # Search issues for the user's top skills.
     for skill in user_skills[:5]:
@@ -50,19 +67,7 @@ async def get_matched_issues(username: str):
                 per_page=10,
             )
 
-            for issue in result["issues"]:
-                match = calculate_issue_score(
-                    issue,
-                    user_skills,
-                )
-
-                all_issues.append(
-                    {
-                        **issue,
-                        "match_score": match["score"],
-                        "match_reasons": match["reasons"],
-                    }
-                )
+            found_issues.extend(result["issues"])
 
         except GitHubRateLimitError:
             # Every remaining search would fail too, so tell the caller.
@@ -73,19 +78,61 @@ async def get_matched_issues(username: str):
             # break the entire recommendation request.
             continue
 
-    # Remove duplicate issues.
+    # IDF is computed over everything fetched, so a skill that every
+    # result mentions counts for less than a rare one.
+    idf = build_idf(found_issues, weighted_skills)
+
+    # None unless OSM_USE_EMBEDDINGS is on and sentence-transformers is installed.
+    semantic = similarities(weighted_skills, found_issues)
+
+    all_issues = []
+
+    for index, issue in enumerate(found_issues):
+        match = calculate_issue_score(
+            issue,
+            weighted_skills,
+            idf,
+            semantic[index] if semantic is not None else None,
+        )
+
+        all_issues.append(
+            {
+                **issue,
+                "match_score": match["score"],
+                "match_reasons": match["reasons"],
+                "matched_skills": match["matched_skills"],
+                "score_method": match["score_method"],
+                "freshness": match.get("freshness"),
+                "_raw_score": match["raw_score"],
+            }
+        )
+
+    # Remove duplicate issues, keeping the best score.
     unique_issues = {}
 
     for issue in all_issues:
-        unique_issues[issue["id"]] = issue
+        current = unique_issues.get(issue["id"])
+
+        if current is None or issue["_raw_score"] > current["_raw_score"]:
+            unique_issues[issue["id"]] = issue
 
     recommendations = list(unique_issues.values())
 
+    # Optionally exclude stale issues (>60 days inactive)
+    if exclude_stale:
+        recommendations = [
+            iss for iss in recommendations
+            if not (iss.get("freshness") and iss["freshness"].get("is_stale"))
+        ]
+
     # Highest compatibility first.
     recommendations.sort(
-        key=lambda issue: issue["match_score"],
+        key=lambda issue: issue["_raw_score"],
         reverse=True,
     )
+
+    for issue in recommendations:
+        issue.pop("_raw_score", None)
 
     return {
         "username": username,

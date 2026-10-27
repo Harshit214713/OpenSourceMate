@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.services.github_service import (
     get_github_user,
+    get_repository_details,
     get_user_repositories,
 )
 from app.services.skill_service import analyze_skills
@@ -65,7 +66,7 @@ async def get_repositories(username: str):
 
 
 @router.get("/users/{username}/skills")
-async def get_user_skills(username: str):
+async def get_user_skills(username: str, include_forks: bool = False):
     repositories = await get_user_repositories(username)
 
     if repositories is None:
@@ -74,7 +75,10 @@ async def get_user_skills(username: str):
             detail="GitHub user not found",
         )
 
-    result = analyze_skills(repositories)
+    details = await get_repository_details(repositories)
+    result = analyze_skills(
+        repositories, include_forks=include_forks, repo_details=details
+    )
 
     return {
         "username": username,

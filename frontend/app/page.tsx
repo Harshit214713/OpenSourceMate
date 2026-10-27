@@ -3,6 +3,13 @@ import { useEffect, useState } from "react";
 
 import GitHubLink from "../components/GitHubLink";
 import StarterCommentModal from "../components/StarterCommentModal";
+import FAQ from "../components/FAQ";
+import {
+  downloadFile,
+  generateJsonReport,
+  generateMarkdownReport,
+  type ExportPayload,
+} from "../utils/exportAnalysis";
 
 type Profile = {
   username: string;
@@ -19,6 +26,23 @@ type Skill = {
   name: string;
   repository_count: number;
   percentage: number;
+};
+
+type Recommendation = {
+  id: number;
+  title: string;
+  repository: string;
+  url: string;
+  state: string;
+  labels: string[];
+  comments: number;
+  created_at: string;
+  updated_at: string;
+  language?: string;
+  match_score?: number;
+  score?: number;
+  match_reasons?: string[];
+  reasons?: string[];
 };
 
 type SkillsData = {
@@ -72,11 +96,71 @@ useEffect(() => {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [skills, setSkills] = useState<SkillsData | null>(null);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [loadingMatching, setLoadingMatching] = useState(false);
+  const [matchingError, setMatchingError] = useState("");
 
   const [error, setError] = useState("");
   const [lastAnalyzed, setLastAnalyzed] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const fetchMatchedIssues = async (targetUsername: string) => {
+    setLoadingMatching(true);
+    setMatchingError("");
+
+    try {
+      const matchResponse = await fetch(
+        `${API_URL}/api/matching/users/${encodeURIComponent(targetUsername)}/issues`
+      );
+
+      if (!matchResponse.ok) {
+        setMatchingError("Unable to load recommended issues right now.");
+        return;
+      }
+
+      const matchData = await matchResponse.json();
+      setRecommendations(matchData.recommendations || []);
+    } catch {
+      setMatchingError("Unable to load recommended issues. Please try again later.");
+    } finally {
+      setLoadingMatching(false);
+    }
+  };
+
+  const handleExport = (format: "markdown" | "json") => {
+    if (!profile) return;
+
+    const payload: ExportPayload = {
+      username: profile.username,
+      name: profile.name,
+      bio: profile.bio,
+      profileUrl: profile.profile_url,
+      repositoriesCount: profile.public_repositories,
+      followers: profile.followers,
+      following: profile.following,
+      skills: skills?.skills || [],
+      totalRepositoriesAnalyzed: skills?.total_repositories_analyzed || 0,
+      exportedAt: new Date().toISOString().split("T")[0],
+    };
+
+    if (format === "markdown") {
+      const content = generateMarkdownReport(payload);
+      downloadFile(
+        content,
+        `opensourcemate-${profile.username}-analysis.md`,
+        "text/markdown;charset=utf-8"
+      );
+    } else {
+      const content = generateJsonReport(payload);
+      downloadFile(
+        content,
+        `opensourcemate-${profile.username}-analysis.json`,
+        "application/json;charset=utf-8"
+      );
+    }
+  };
 
   const analyzeProfile = async (override?: string) => {
     const cleanUsername = (override ?? username).trim().replace(/^@/, "");
@@ -158,6 +242,8 @@ useEffect(() => {
 
       setProfile(profileData);
       setSkills(skillsData);
+
+      fetchMatchedIssues(cleanUsername);
     } catch (err) {
       setCanRetry(true);
       if (err instanceof TypeError) {
@@ -226,6 +312,13 @@ useEffect(() => {
               Analyzer
             </a>
 
+            <a
+              href="#faq"
+              className="transition hover:text-white"
+            >
+              FAQ
+            </a>
+
             <button
               onClick={() => setIsCommentModalOpen(true)}
               className="flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300 transition hover:bg-blue-500/20 hover:text-white"
@@ -245,7 +338,86 @@ useEffect(() => {
 </button>
           </div>
 
+          {/* Mobile hamburger button */}
+          <div className="flex items-center md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label="Toggle navigation menu"
+              aria-expanded={mobileMenuOpen}
+              className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/5 p-2 text-gray-400 transition hover:bg-white/10 hover:text-white focus:outline-none"
+            >
+              {mobileMenuOpen ? (
+                <svg
+                  className="h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  className="h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="2"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              )}
+            </button>
+          </div>
+
         </div>
+
+        {/* Mobile dropdown menu */}
+        {mobileMenuOpen && (
+          <div className="border-t border-white/5 bg-[#05070d]/95 px-6 py-4 shadow-2xl backdrop-blur-2xl md:hidden">
+            <div className="flex flex-col gap-3 text-sm text-gray-300">
+              <a
+                href="#how-it-works"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+              >
+                How it works
+              </a>
+
+              <a
+                href="#analyzer"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+              >
+                Analyzer
+              </a>
+
+              <a
+                href="#faq"
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-xl px-3 py-2 transition hover:bg-white/5 hover:text-white"
+              >
+                FAQ
+              </a>
+
+              <div
+                className="rounded-xl px-3 py-2 transition hover:bg-white/5"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <GitHubLink className="transition hover:text-white" />
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Hero */}
@@ -393,18 +565,39 @@ useEffect(() => {
           <div className="mx-auto max-w-5xl">
 
             {/* Section heading */}
-            <div className="mb-8">
-              <p className="text-sm font-medium text-purple-400">
-                PROFILE ANALYSIS
-              </p>
+            <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <p className="text-sm font-medium text-purple-400">
+                  PROFILE ANALYSIS
+                </p>
 
-              <h2 className="mt-2 text-3xl font-bold tracking-tight">
-                Your developer profile
-              </h2>
+                <h2 className="mt-2 text-3xl font-bold tracking-tight">
+                  Your developer profile
+                </h2>
 
-              <p className="mt-2 text-gray-500">
-                Here&apos;s what OpenSourceMate discovered from your GitHub activity.
-              </p>
+                <p className="mt-2 text-gray-500">
+                  Here&apos;s what OpenSourceMate discovered from your GitHub activity.
+                </p>
+              </div>
+
+              {profile && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleExport("markdown")}
+                    className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white"
+                    title="Export summary as Markdown (.md)"
+                  >
+                    <span>↓</span> Export Markdown
+                  </button>
+                  <button
+                    onClick={() => handleExport("json")}
+                    className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white"
+                    title="Export raw data as JSON (.json)"
+                  >
+                    <span>↓</span> Export JSON
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Profile card */}
@@ -525,36 +718,62 @@ useEffect(() => {
               </div>
             )}
 
-            {/* Coming next */}
-            <div className="mt-6 rounded-3xl border border-purple-500/20 bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/5 p-6 sm:p-8">
-
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
+            {/* Recommended Issues Section (Issue #40) */}
+            <div id="recommendations" className="mt-6 rounded-3xl border border-purple-500/20 bg-white/[0.035] p-6 sm:p-8">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                 <div>
-                  <div className="mb-3 inline-flex rounded-full border border-purple-400/20 bg-purple-400/10 px-3 py-1 text-xs font-medium text-purple-300">
-                    NEXT
+                  <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-purple-400/20 bg-purple-400/10 px-3 py-1 text-xs font-medium text-purple-300">
+                    <span>🎯</span> MATCHED ISSUES
                   </div>
 
-                  <h3 className="text-xl font-bold">
-                    Find issues that match your skills
+                  <h3 className="text-2xl font-bold tracking-tight">
+                    Recommended contribution opportunities
                   </h3>
 
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-                    OpenSourceMate will compare your technical profile with
-                    open GitHub issues and recommend contribution opportunities
-                    based on compatibility.
+                  <p className="mt-2 text-sm text-gray-500">
+                    Opportunities matching your skills and experience, ranked by compatibility score.
                   </p>
                 </div>
 
-                <div className="shrink-0 rounded-2xl border border-white/10 bg-black/20 px-5 py-4 text-center">
-                  <p className="text-2xl">🎯</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Coming next
-                  </p>
-                </div>
-
+                {recommendations.length > 0 && (
+                  <div className="text-xs text-gray-500">
+                    {recommendations.length} {recommendations.length === 1 ? "issue" : "issues"} recommended
+                  </div>
+                )}
               </div>
 
+              {/* Loading State */}
+              {loadingMatching && (
+                <div className="mt-8 rounded-2xl border border-dashed border-white/10 p-10 text-center">
+                  <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+                  <p className="text-sm text-gray-300">Searching GitHub for issues matching your skills...</p>
+                </div>
+              )}
+
+              {/* Error State */}
+              {!loadingMatching && matchingError && (
+                <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-center">
+                  <p className="text-sm text-red-300">{matchingError}</p>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!loadingMatching && !matchingError && recommendations.length === 0 && (
+                <div className="mt-8 rounded-2xl border border-dashed border-white/10 p-10 text-center">
+                  <p className="text-gray-400">
+                    No matching open issues found for the detected skills at this time.
+                  </p>
+                </div>
+              )}
+
+              {/* Issue list */}
+              {!loadingMatching && recommendations.length > 0 && (
+                <div className="mt-6 space-y-4">
+                  {recommendations.map((issue) => (
+                    <IssueCard key={issue.id} issue={issue} />
+                  ))}
+                </div>
+              )}
             </div>
 
           </div>
@@ -610,6 +829,29 @@ useEffect(() => {
             />
 
           </div>
+
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="px-6 pt-24">
+        <div className="mx-auto max-w-5xl">
+
+          <div className="text-center">
+            <p className="text-sm font-medium text-purple-400">
+              FAQ
+            </p>
+
+            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+              Frequently asked questions
+            </h2>
+
+            <p className="mx-auto mt-4 max-w-xl text-gray-500">
+              What OpenSourceMate looks at, and what it leaves alone.
+            </p>
+          </div>
+
+          <FAQ theme={theme} />
 
         </div>
       </section>
@@ -740,6 +982,120 @@ function SkillCard({
     </div>
   );
 }
+
+
+function IssueCard({
+  issue,
+}: {
+  issue: Recommendation;
+}) {
+  const score = issue.match_score ?? issue.score ?? 0;
+  const reasons = issue.match_reasons ?? issue.reasons ?? [];
+
+  const getScoreBadgeStyle = (s: number) => {
+    if (s >= 70) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+    if (s >= 40) return "border-purple-500/30 bg-purple-500/10 text-purple-300";
+    return "border-blue-500/30 bg-blue-500/10 text-blue-300";
+  };
+
+  const formattedDate = issue.updated_at
+    ? new Date(issue.updated_at).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : null;
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 p-5 transition hover:border-white/20 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-mono text-purple-300">{issue.repository}</span>
+            {issue.language && (
+              <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-gray-300">
+                {issue.language}
+              </span>
+            )}
+            {formattedDate && (
+              <span className="text-gray-500">Updated {formattedDate}</span>
+            )}
+            <span className="text-gray-500">💬 {issue.comments} comments</span>
+          </div>
+
+          <h4 className="mt-2 text-base font-semibold leading-snug sm:text-lg">
+            <a
+              href={issue.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-purple-300"
+            >
+              {issue.title}
+            </a>
+          </h4>
+
+          {issue.labels && issue.labels.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {issue.labels.slice(0, 6).map((label, idx) => {
+                const isGoodFirst = label.toLowerCase().includes("good first issue");
+                const isHelpWanted = label.toLowerCase().includes("help wanted");
+                return (
+                  <span
+                    key={idx}
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                      isGoodFirst
+                        ? "border border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                        : isHelpWanted
+                        ? "border border-amber-400/30 bg-amber-400/10 text-amber-300"
+                        : "border border-white/10 bg-white/5 text-gray-400"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {reasons.length > 0 && (
+            <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-xs text-gray-400">
+              <p className="font-medium text-gray-300">Why this matches:</p>
+              <ul className="mt-1.5 space-y-1">
+                {reasons.map((reason, i) => (
+                  <li key={i} className="flex items-center gap-1.5">
+                    <span className="text-purple-400">✓</span>
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-row items-center justify-between gap-3 sm:flex-col sm:items-end">
+          <div
+            className={`rounded-xl border px-3 py-1.5 text-center text-xs font-semibold ${getScoreBadgeStyle(
+              score
+            )}`}
+          >
+            <span className="text-sm font-bold sm:text-base">{score}%</span>
+            <span className="block text-[10px] uppercase text-gray-400">Match</span>
+          </div>
+
+          <a
+            href={issue.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-gray-200 transition hover:bg-white hover:text-black"
+          >
+            View on GitHub ↗
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StepCard({
   number,
   icon,

@@ -1,0 +1,2 @@
+# Optional: semantic issue matching (set OSM_USE_EMBEDDINGS=true to use it)
+sentence-transformers>=2.7,<4

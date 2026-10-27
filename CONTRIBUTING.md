@@ -16,6 +16,7 @@ Thank you for your interest in contributing to **OpenSourceMate**! OpenSourceMat
 - [Environment Configuration](#environment-configuration)
 - [Running Tests](#running-tests)
 - [Development Workflow](#development-workflow)
+  - [Claiming an Issue](#claiming-an-issue)
   - [Branch Naming Conventions](#branch-naming-conventions)
   - [Commit Message Guidelines](#commit-message-guidelines)
   - [Submitting a Pull Request](#submitting-a-pull-request)
@@ -170,9 +171,48 @@ Or using Python's built-in test runner:
 python -m unittest discover -s tests
 ```
 
+To run Frontend lint and build: \
+From the repository root:
+
+```bash
+cd frontend
+npm install
+npm run lint
+```
+
+To verify the production build:
+```bash
+npm run build
+``` 
+**Before opening a pull request**
+- Run the backend test suite when your changes affect backend behavior.
+- Run frontend lint when your changes affect frontend code.
+- Run relevant tests for any shared functionality you modify.
+- Add regression tests for bug fixes when practical.
+- Report any checks you could not run, including the reason, in your pull request description.
+
+Do not claim that a check passed unless you actually ran it successfully.
+
 ---
 
 ## Development Workflow
+
+### Claiming an Issue
+We welcome first-time contributors and experienced developers alike.
+
+1. Browse the repository's open issues and look for tasks that match your interests and experience. Start with issues labeled `good first issue` or help wanted, when available.
+
+2. Read the issue description and existing discussion. Check whether someone is already working on it.
+
+3. Comment on the issue to express your interest. Briefly describe how you plan to approach the task and ask any questions you have.
+
+4. Wait for a maintainer to confirm or acknowledge your assignment before beginning substantial work. This helps prevent duplicated effort; commenting alone does not guarantee assignment.
+
+5. Once confirmed, create a feature branch from the latest main and reference the issue in your pull request.
+
+If you can no longer work on a claimed issue, let the maintainers know so someone else can take it.
+
+---
 
 ### Branch Naming Conventions
 

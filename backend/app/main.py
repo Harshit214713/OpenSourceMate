@@ -8,7 +8,12 @@ from app.api.routes.github import router as github_router
 from app.api.routes.issues import router as issues_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.matching import router as matching_router
-from app.services.github_service import GitHubRateLimitError, close_client
+from app.services.github_service import (
+    GitHubRateLimitError,
+    cache,
+    close_client,
+    get_github_diagnostics,
+)
 
 
 @asynccontextmanager
@@ -57,6 +62,22 @@ async def health_check():
         "status": "healthy",
         "service": "OpenSourceMate API",
         "version": "0.1.0",
+    }
+
+
+@app.get("/api/health/diagnostics")
+async def health_diagnostics():
+    github_info = await get_github_diagnostics()
+    cache_info = cache.stats()
+
+    overall_status = "healthy" if github_info.get("reachable", False) else "degraded"
+
+    return {
+        "status": overall_status,
+        "service": "OpenSourceMate API",
+        "version": "0.1.0",
+        "github": github_info,
+        "cache": cache_info,
     }
 
 

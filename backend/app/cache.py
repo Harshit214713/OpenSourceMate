@@ -39,6 +39,15 @@ class TTLCache:
     def clear(self) -> None:
         self._store.clear()
 
+    def stats(self) -> dict[str, int]:
+        now = time.monotonic()
+        active = sum(1 for exp, _ in self._store.values() if exp > now)
+        return {
+            "active_entries": active,
+            "total_keys": len(self._store),
+            "max_entries": self._max_entries,
+        }
+
     def _evict(self) -> None:
         now = time.monotonic()
 

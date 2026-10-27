@@ -143,7 +143,25 @@ cd OpenSourceMate
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local   # Configure API URL (default: http://localhost:8000)
+```
+
+Configure environment variables (optional for local development, defaults to `http://localhost:8000`):
+
+### Windows (PowerShell)
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+### macOS / Linux
+
+```bash
+cp .env.example .env.local
+```
+
+Start the frontend development server:
+
+```bash
 npm run dev
 ```
 
@@ -179,10 +197,18 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-Configure environment variables:
+Configure environment variables (optional, see [Environment Variables](#-environment-variables)):
+
+### Windows (PowerShell)
+
+```powershell
+Copy-Item .env.example .env
+```
+
+### macOS / Linux
 
 ```bash
-cp .env.example .env   # Add GitHub token, AI API key if needed
+cp .env.example .env
 ```
 
 Install dependencies:
@@ -205,45 +231,76 @@ http://localhost:8000
 
 Interactive OpenAPI documentation (Swagger UI) is accessible at `http://localhost:8000/docs`.
 
+### Run the backend tests
+
+The tests mock the GitHub API, so no network or token is needed.
+
+```bash
+pip install -r requirements-dev.txt
+pytest --cov=app
+```
+
 > Backend setup is currently evolving. More detailed setup instructions and environment configuration will be documented as the project develops.
 
 ---
 
 ## 🔐 Environment Variables
 
-If a feature requires external services or API credentials, configure them through environment variables rather than committing secrets to the repository.
+OpenSourceMate uses environment variables to configure the Next.js frontend and FastAPI backend.
 
-Each package includes a `.env.example` file with all supported variables. Copy the example file and fill in your values:
+### Key Guidelines
 
-### Frontend (`frontend/.env.local`)
+- **Zero-credential local setup**: All variables have safe defaults. You can run the entire frontend and backend locally without supplying any external API keys or tokens.
+- **Optional features**: Integrations such as higher GitHub API rate limits and AI-assisted issue analysis are optional. If you wish to test or develop these features, you must provide your own credentials.
+- **Secret security**: **Never commit `.env` or `.env.local` files, API keys, passwords, or personal access tokens to Git.** These files are ignored by `.gitignore`.
 
-```bash
-cp frontend/.env.example frontend/.env.local
+### Template Setup Instructions
+
+Each component includes a `.env.example` template with supported variables. Copy the templates to initialize your local environment files:
+
+#### From the Repository Root
+
+**Windows (PowerShell):**
+
+```powershell
+Copy-Item backend\.env.example backend\.env
+Copy-Item frontend\.env.example frontend\.env.local
 ```
 
-```env
-# Backend API URL (required for API calls)
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-### Backend (`backend/.env`)
+**macOS / Linux:**
 
 ```bash
 cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
 ```
 
-```env
-# GitHub API Token (optional, for higher rate limits)
-# GITHUB_TOKEN=
+#### From Component Directories
 
-# AI Configuration (optional, for AI-powered issue analysis)
-# AI_API_KEY=
-# AI_MODEL=gpt-4o-mini
+If you are already inside the `backend/` or `frontend/` directory:
 
-# Server Configuration
-# HOST=0.0.0.0
-# PORT=8000
-```
+- **Backend (`backend/`):**
+  - Windows (PowerShell): `Copy-Item .env.example .env`
+  - macOS / Linux: `cp .env.example .env`
+- **Frontend (`frontend/`):**
+  - Windows (PowerShell): `Copy-Item .env.example .env.local`
+  - macOS / Linux: `cp .env.example .env.local`
+
+> **Note for Frontend:** Next.js loads local overrides from `.env.local`. Do not name the frontend file `.env` if you want local development overrides to follow Next.js conventions.
+
+### Supported Environment Variables
+
+| Variable | Location | Required? | Description |
+|---|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `frontend/.env.local` | No | Base URL of the FastAPI backend server accessed by the Next.js frontend. Safe default: `http://localhost:8000`. No credentials needed. |
+| `GITHUB_TOKEN` | `backend/.env` | No | GitHub Personal Access Token (classic or fine-grained). Raises GitHub REST API rate limits from 60 to 5,000 requests/hour. Safe default: empty (unauthenticated requests). To obtain one, navigate to GitHub **Settings > Developer Settings > Personal access tokens** and generate a token (public read-only access is sufficient). |
+| `GITHUB_CACHE_TTL` | `backend/.env` | No | In-memory cache duration (in seconds) for GitHub profile and repository API responses. Safe default: `300` (5 minutes). Set to `0` to disable in-memory caching during development. No credentials needed. |
+| `AI_API_KEY` | `backend/.env` | No | OpenAI API key used for optional AI-powered issue analysis (`/api/ai/analyze-issue`). Safe default: empty (AI analysis endpoints return graceful fallback recommendations without errors). To obtain one, generate an API key at [platform.openai.com](https://platform.openai.com/). |
+| `AI_MODEL` | `backend/.env` | No | Model name passed to OpenAI when `AI_API_KEY` is set. Safe default: `gpt-4o-mini`. No credentials needed. |
+
+> **Framework Notes:**
+> - The backend is implemented in **FastAPI** using Pydantic Settings. It does not use Django, so Django-specific settings (`SECRET_KEY`, `DEBUG`) are not required or supported.
+> - The AI integration uses OpenAI via `AI_API_KEY` and `AI_MODEL` in the backend; other variables like `OPENAI_API_KEY` or `GOOGLE_API_KEY` are not read by the current codebase.
+> - Never expose server-side credentials or API keys in the frontend (`NEXT_PUBLIC_*`). Only public configuration (such as the backend API URL) should be placed in `frontend/.env.local`.
 
 **Never commit API keys, passwords, tokens, or other secrets to Git.**
 

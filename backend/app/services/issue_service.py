@@ -1,6 +1,9 @@
 from app.services.github_service import GITHUB_API_URL, github_get
 
 
+MAX_BODY_LENGTH = 1000
+
+
 async def search_github_issues(
     language: str | None = None,
     label: str | None = None,
@@ -56,6 +59,7 @@ async def search_github_issues(
                 "created_at": issue["created_at"],
                 "updated_at": issue["updated_at"],
                 "user": issue["user"]["login"],
+                "body": (issue.get("body") or "")[:MAX_BODY_LENGTH],
                 "language": language,
             }
         )
