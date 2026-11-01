@@ -1,12 +1,17 @@
 from fastapi import APIRouter, HTTPException
 
+from app.schemas.serializers import (
+    GitHubUserProfileSerializer,
+    RepositoryListSerializer,
+    UserSkillsSerializer,
+)
 from app.services.github_service import (
     get_github_user,
     get_repository_details,
     get_user_repositories,
 )
 from app.services.skill_service import analyze_skills
-
+from app.utils.validation import validate_github_username
 
 router = APIRouter(
     prefix="/api/github",
@@ -14,9 +19,14 @@ router = APIRouter(
 )
 
 
-@router.get("/users/{username}")
+@router.get(
+    "/users/{username}",
+    response_model=GitHubUserProfileSerializer,
+    summary="Get GitHub user profile",
+)
 async def get_user(username: str):
-    user = await get_github_user(username)
+    validated_username = validate_github_username(username)
+    user = await get_github_user(validated_username)
 
     if user is None:
         raise HTTPException(
@@ -26,19 +36,24 @@ async def get_user(username: str):
 
     return {
         "username": user["login"],
-        "name": user["name"],
-        "bio": user["bio"],
+        "name": user.get("name"),
+        "bio": user.get("bio"),
         "avatar_url": user["avatar_url"],
-        "public_repositories": user["public_repos"],
-        "followers": user["followers"],
-        "following": user["following"],
+        "public_repositories": user.get("public_repos", 0),
+        "followers": user.get("followers", 0),
+        "following": user.get("following", 0),
         "profile_url": user["html_url"],
     }
 
 
-@router.get("/users/{username}/repositories")
+@router.get(
+    "/users/{username}/repositories",
+    response_model=RepositoryListSerializer,
+    summary="Get GitHub user repositories",
+)
 async def get_repositories(username: str):
-    repositories = await get_user_repositories(username)
+    validated_username = validate_github_username(username)
+    repositories = await get_user_repositories(validated_username)
 
     if repositories is None:
         raise HTTPException(
@@ -47,27 +62,32 @@ async def get_repositories(username: str):
         )
 
     return {
-        "username": username,
+        "username": validated_username,
         "repository_count": len(repositories),
         "repositories": [
             {
                 "name": repo["name"],
-                "description": repo["description"],
-                "language": repo["language"],
-                "stars": repo["stargazers_count"],
-                "forks": repo["forks_count"],
-                "is_fork": repo["fork"],
-                "url": repo["html_url"],
-                "updated_at": repo["updated_at"],
+                "description": repo.get("description"),
+                "language": repo.get("language"),
+                "stars": repo.get("stargazers_count", 0),
+                "forks": repo.get("forks_count", 0),
+                "is_fork": repo.get("fork", False),
+                "url": repo.get("html_url"),
+                "updated_at": repo.get("updated_at"),
             }
             for repo in repositories
         ],
     }
 
 
-@router.get("/users/{username}/skills")
+@router.get(
+    "/users/{username}/skills",
+    response_model=UserSkillsSerializer,
+    summary="Analyze GitHub user technical skills",
+)
 async def get_user_skills(username: str, include_forks: bool = False):
-    repositories = await get_user_repositories(username)
+    validated_username = validate_github_username(username)
+    repositories = await get_user_repositories(validated_username)
 
     if repositories is None:
         raise HTTPException(
@@ -81,6 +101,6 @@ async def get_user_skills(username: str, include_forks: bool = False):
     )
 
     return {
-        "username": username,
+        "username": validated_username,
         **result,
     }

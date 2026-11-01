@@ -8,6 +8,8 @@ from app.services.skill_service import analyze_skills
 from app.services.issue_service import search_github_issues
 from app.services.embedding_service import similarities
 from app.services.matching_service import build_idf, calculate_issue_score
+from app.ai.ai_service import generate_issue_match_explanation
+from app.utils.validation import validate_github_username
 
 
 router = APIRouter(
@@ -21,7 +23,8 @@ async def get_matched_issues(
     username: str,
     exclude_stale: bool = Query(default=False),
 ):
-    repositories = await get_user_repositories(username)
+    validated_username = validate_github_username(username)
+    repositories = await get_user_repositories(validated_username)
 
     if repositories is None:
         raise HTTPException(
@@ -51,7 +54,7 @@ async def get_matched_issues(
 
     if not user_skills:
         return {
-            "username": username,
+            "username": validated_username,
             "skills": [],
             "recommendations": [],
         }
@@ -131,11 +134,29 @@ async def get_matched_issues(
         reverse=True,
     )
 
-    for issue in recommendations:
+    top_recommendations = recommendations[:20]
+    for issue in top_recommendations:
         issue.pop("_raw_score", None)
+        explanation_data = await generate_issue_match_explanation(issue, user_skills)
+        issue["explanation"] = explanation_data["explanation"]
+        issue["is_ai_generated"] = explanation_data["is_ai_generated"]
+        issue["why_it_matches"] = explanation_data["explanation"]
 
     return {
-        "username": username,
+        "username": validated_username,
         "skills": user_skills,
-        "recommendations": recommendations[:20],
+        "recommendations": top_recommendations,
     }
+
+
+@router.post("/explain")
+async def explain_recommendation(payload: dict):
+    """
+    Dedicated endpoint to generate or re-generate an explanation for an issue
+    and developer skill combination.
+    """
+    issue = payload.get("issue", {})
+    user_skills = payload.get("user_skills", [])
+    if not issue:
+        raise HTTPException(status_code=400, detail="Missing issue data")
+    return await generate_issue_match_explanation(issue, user_skills)
