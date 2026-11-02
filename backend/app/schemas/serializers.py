@@ -129,11 +129,17 @@ class RepositoryItemSerializer(BaseModel):
 
 
 class RepositoryListSerializer(BaseModel):
-    """List of repositories for a user."""
+    """List of repositories for a user with pagination metadata."""
 
     username: str = Field(..., description="Target GitHub username")
     repository_count: int = Field(
         ..., description="Total repository count returned"
+    )
+    total_pages_fetched: int = Field(
+        default=1, description="Number of repository pages fetched from GitHub API"
+    )
+    has_more: bool = Field(
+        default=False, description="Whether more repositories exist beyond the pagination cap"
     )
     repositories: list[RepositoryItemSerializer] = Field(
         default_factory=list, description="Repository list"
@@ -157,6 +163,26 @@ class SkillItemSerializer(BaseModel):
     weight: float | None = Field(
         default=None, description="Calculated skill weight"
     )
+    group: str | None = Field(
+        default=None,
+        description="Associated technology ecosystem or group name (Issue #130)",
+    )
+    subskills: list[str] | None = Field(
+        default=None,
+        description="Constituent technologies if this item represents a combined group (Issue #130)",
+    )
+    proficiency: str | None = Field(
+        default=None,
+        description="Estimated proficiency level: Learning, Comfortable, or Strong (Issue #131)",
+    )
+    proficiency_score: float | None = Field(
+        default=None,
+        description="Calculated proficiency score from 0.0 to 10.0 (Issue #131)",
+    )
+    proficiency_reason: str | None = Field(
+        default=None,
+        description="Explanation of how the proficiency estimate was computed (Issue #131)",
+    )
 
 
 class UserSkillsSerializer(BaseModel):
@@ -168,6 +194,10 @@ class UserSkillsSerializer(BaseModel):
     )
     total_repositories_analyzed: int = Field(
         ..., description="Total count of analyzed repositories"
+    )
+    groups: dict[str, list[str]] | None = Field(
+        default=None,
+        description="Mapping of active technology groups to present constituent skills (Issue #130)",
     )
 
 

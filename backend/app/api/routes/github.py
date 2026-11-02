@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 
+from app.config import get_settings
 from app.schemas.serializers import (
+    ExtendedGitHubUserProfileSerializer,
     GitHubUserProfileSerializer,
     RepositoryListSerializer,
     UserSkillsSerializer,
@@ -21,7 +23,7 @@ router = APIRouter(
 
 @router.get(
     "/users/{username}",
-    response_model=GitHubUserProfileSerializer,
+    response_model=ExtendedGitHubUserProfileSerializer,
     summary="Get GitHub user profile",
 )
 async def get_user(username: str):
@@ -43,6 +45,12 @@ async def get_user(username: str):
         "followers": user.get("followers", 0),
         "following": user.get("following", 0),
         "profile_url": user["html_url"],
+        "location": user.get("location"),
+        "company": user.get("company"),
+        "blog": user.get("blog"),
+        "twitter_username": user.get("twitter_username"),
+        "created_at": user.get("created_at"),
+        "public_gists": user.get("public_gists", 0),
     }
 
 
@@ -61,9 +69,17 @@ async def get_repositories(username: str):
             detail="GitHub user not found",
         )
 
+    settings = get_settings()
+    per_page = getattr(settings, "github_repos_per_page", 100)
+    cap = getattr(settings, "github_max_repos_cap", 300)
+    pages = (len(repositories) + per_page - 1) // per_page if repositories else 0
+    has_more = len(repositories) >= cap
+
     return {
         "username": validated_username,
         "repository_count": len(repositories),
+        "total_pages_fetched": max(1, pages) if repositories else 0,
+        "has_more": has_more,
         "repositories": [
             {
                 "name": repo["name"],
@@ -83,9 +99,16 @@ async def get_repositories(username: str):
 @router.get(
     "/users/{username}/skills",
     response_model=UserSkillsSerializer,
+    response_model_exclude_none=True,
     summary="Analyze GitHub user technical skills",
 )
-async def get_user_skills(username: str, include_forks: bool = False):
+async def get_user_skills(
+    username: str,
+    include_forks: bool = False,
+    ignore_noise: bool = True,
+    group_related: bool = False,
+    include_proficiency: bool = True,
+):
     validated_username = validate_github_username(username)
     repositories = await get_user_repositories(validated_username)
 
@@ -97,7 +120,12 @@ async def get_user_skills(username: str, include_forks: bool = False):
 
     details = await get_repository_details(repositories)
     result = analyze_skills(
-        repositories, include_forks=include_forks, repo_details=details
+        repositories,
+        include_forks=include_forks,
+        repo_details=details,
+        ignore_noise=ignore_noise,
+        group_related=group_related,
+        compute_proficiency=include_proficiency,
     )
 
     return {
