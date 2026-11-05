@@ -5,7 +5,7 @@ from app.services.github_service import GitHubRateLimitError
 from app.services.issue_service import search_github_issues
 
 router = APIRouter(
-    prefix="/api/issues",
+    prefix="/issues",
     tags=["Issues"],
 )
 

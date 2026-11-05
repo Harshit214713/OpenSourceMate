@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useId } from "react";
+import { useState, useId } from "react";
 
 export type SkillItem = {
   name: string;
@@ -56,7 +56,7 @@ export default function SkillChart({
   const displaySkills: (SkillItem & { color: (typeof CHART_PALETTE)[0] })[] = [
     ...topSkills.map((skill, index) => ({
       ...skill,
-      color: CHART_PALETTE[index % CHART_PALETTE.length],
+      color: CHART_PALETTE[index % CHART_PALETTE.length] ?? CHART_PALETTE[0]!,
     })),
   ];
 
@@ -288,7 +288,7 @@ export default function SkillChart({
                   <span
                     className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
                   >
-                    {skills[0].name}
+                    {skills[0]?.name ?? ""}
                   </span>
                 </>
               ) : (

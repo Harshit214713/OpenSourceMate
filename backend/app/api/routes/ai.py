@@ -4,7 +4,7 @@ from app.ai.ai_service import analyze_issue
 from app.schemas.serializers import IssueAnalysisRequestSerializer
 
 router = APIRouter(
-    prefix="/api/ai",
+    prefix="/ai",
     tags=["AI"],
 )
 

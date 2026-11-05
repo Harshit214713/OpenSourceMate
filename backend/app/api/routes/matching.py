@@ -12,7 +12,7 @@ from app.services.skill_service import analyze_skills
 from app.utils.validation import validate_github_username
 
 router = APIRouter(
-    prefix="/api/matching",
+    prefix="/matching",
     tags=["Matching"],
 )
 

@@ -172,12 +172,14 @@ export default function ExportMenu({
         setFocusedIndex(FORMAT_OPTIONS.length - 1);
         break;
       case "Enter":
-      case " ":
-        if (focusedIndex >= 0 && focusedIndex < FORMAT_OPTIONS.length) {
+      case " ": {
+        const option = FORMAT_OPTIONS[focusedIndex];
+        if (option) {
           event.preventDefault();
-          handleSelect(FORMAT_OPTIONS[focusedIndex].format);
+          handleSelect(option.format);
         }
         break;
+      }
       case "Tab":
         setIsOpen(false);
         setFocusedIndex(-1);

@@ -57,6 +57,8 @@ export interface IssueRecommendation {
   reasons?: string[];
   explanation?: string;
   is_ai_generated?: boolean;
+  difficulty?: "Beginner" | "Intermediate" | "Advanced";
+  is_mock?: boolean;
 }
 
 export interface MatchedIssuesResponse {
@@ -107,4 +109,75 @@ export interface CompleteAnalysisResult {
   profile: GitHubUserProfile;
   skills: UserSkillsResponse;
   issues?: MatchedIssuesResponse;
+}
+
+
+/**
+ * Type-level utility guards and assertion helpers for strict typing (Issue #139).
+ */
+
+export type Nullable<T> = T | null;
+export type Optional<T> = T | undefined;
+export type Maybe<T> = T | null | undefined;
+
+/**
+ * Asserts that a value is non-null and non-undefined.
+ */
+export function assertNonNull<T>(val: Maybe<T>, message = "Value cannot be null or undefined"): asserts val is T {
+  if (val === null || val === undefined) {
+    throw new TypeError(message);
+  }
+}
+
+/**
+ * Non-throwing check if a value is defined and non-null.
+ */
+export function isDefined<T>(val: Maybe<T>): val is T {
+  return val !== null && val !== undefined;
+}
+
+/**
+ * Strict key lookup safe from prototype poisoning and unchecked index access.
+ */
+export function hasProperty<K extends string>(obj: unknown, key: K): obj is Record<K, unknown> {
+  return typeof obj === "object" && obj !== null && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+/**
+ * Safe integer parser returning a fallback instead of NaN.
+ */
+export function safeParseInt(value: string | number | null | undefined, fallback = 0): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? Math.floor(value) : fallback;
+  }
+  if (!value) return fallback;
+  const parsed = parseInt(String(value), 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+/**
+ * Safe string trimmer returning empty string for nullish values.
+ */
+export function safeTrim(value: Maybe<string>): string {
+  return value ? value.trim() : "";
+}
+
+/**
+ * Discriminated union for asynchronous operation state machines.
+ */
+export type AsyncState<T, E = Error> =
+  | { status: "idle"; data?: undefined; error?: undefined }
+  | { status: "loading"; data?: undefined; error?: undefined }
+  | { status: "success"; data: T; error?: undefined }
+  | { status: "error"; data?: undefined; error: E };
+
+/**
+ * Paginated API envelope format.
+ */
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  per_page: number;
+  has_more: boolean;
 }

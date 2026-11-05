@@ -1,13 +1,16 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import ExportMenu from "../components/ExportMenu";
 import GitHubLink from "../components/GitHubLink";
 import StarterCommentModal from "../components/StarterCommentModal";
 import ProfileCard from "../components/ProfileCard";
 import RecentSearches from "../components/RecentSearches";
+import ServiceUnavailableBanner from "../components/ServiceUnavailableBanner";
 import SkillChart from "../components/SkillChart";
 import SkillProficiencyBadge from "../components/SkillProficiencyBadge";
-import SkillsToLearn from "../components/SkillsToLearn";
+import IssueCard from "../components/IssueCard";
+import { getMockRecommendedIssues } from "../data/mockIssues";
 import {
   type GitHubUserProfile as Profile,
   type SkillItem as Skill,
@@ -23,6 +26,12 @@ import {
   isAbortError,
   ApiClientError,
 } from "../utils/apiClient";
+import {
+  isNetworkOrServerError,
+  resolveServiceErrorDetails,
+  sanitizeErrorMessage,
+  type ServiceErrorDetails,
+} from "../utils/errorHandling";
 import {
   exportAnalysisData,
   type ExportFormat,
@@ -80,6 +89,7 @@ export default function Home() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loadingMatching, setLoadingMatching] = useState(false);
   const [matchingError, setMatchingError] = useState("");
+  const [isDemoData, setIsDemoData] = useState(false);
 
   // Filters for recommended issues (Issue #47)
   const [languageFilter, setLanguageFilter] = useState("all");
@@ -88,6 +98,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [error, setError] = useState("");
+  const [serviceError, setServiceError] = useState<ServiceErrorDetails | null>(null);
   const [lastAnalyzed, setLastAnalyzed] = useState("");
   const [canRetry, setCanRetry] = useState(false);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
@@ -125,13 +136,23 @@ export default function Home() {
   const fetchMatchedIssues = async (targetUsername: string, signal?: AbortSignal) => {
     setLoadingMatching(true);
     setMatchingError("");
+    setIsDemoData(false);
 
     try {
       const matchData = await apiFetchMatchedIssues(targetUsername, { signal });
-      setRecommendations(matchData.recommendations || []);
+      if (matchData.recommendations && matchData.recommendations.length > 0) {
+        setRecommendations(matchData.recommendations);
+        setIsDemoData(false);
+      } else {
+        const fallback = getMockRecommendedIssues(skills?.skills);
+        setRecommendations(fallback);
+        setIsDemoData(true);
+      }
     } catch (err: unknown) {
       if (isAbortError(err)) return;
-      setMatchingError("Unable to load recommended issues. Please try again later.");
+      const fallback = getMockRecommendedIssues(skills?.skills);
+      setRecommendations(fallback);
+      setIsDemoData(true);
     } finally {
       setLoadingMatching(false);
     }
@@ -227,6 +248,7 @@ export default function Home() {
     const validation = validateGitHubUsername(raw);
 
     if (!validation.isValid) {
+      setServiceError(null);
       setError(validation.error || "Please enter a valid GitHub username.");
       return;
     }
@@ -240,6 +262,7 @@ export default function Home() {
     setCanRetry(false);
     setLoading(true);
     setError("");
+    setServiceError(null);
 
     // Only clear previous analysis if analyzing a different username
     if (cleanUsername.toLowerCase() !== profile?.username?.toLowerCase()) {
@@ -267,6 +290,18 @@ export default function Home() {
         return; // Prior in-flight search was aborted by a new search
       }
       setCanRetry(true);
+
+      // Detect network failure or 5xx server-side response (Issue #128)
+      if (isNetworkOrServerError(err)) {
+        const details = resolveServiceErrorDetails(err, {
+          username: cleanUsername,
+          endpoint: `/api/github/users/${cleanUsername}`,
+        });
+        setServiceError(details);
+        setError(details.message);
+        return;
+      }
+
       if (err instanceof ApiClientError) {
         if (err.status === 404) {
           setError(resolveAnalyzerErrorMessage(404, { username: cleanUsername }));
@@ -276,16 +311,8 @@ export default function Home() {
           setError(resolveAnalyzerErrorMessage(429, { resetAt: err.resetAt }));
           return;
         }
-        if (err.status === 502 || err.status === 503 || err.status === 504) {
-          setError(resolveAnalyzerErrorMessage(err.status));
-          return;
-        }
-        if (err.code === "NETWORK_ERROR" || err.status === 0) {
-          setError(resolveAnalyzerErrorMessage(new TypeError(err.message)));
-          return;
-        }
       }
-      setError(resolveAnalyzerErrorMessage(err));
+      setError(sanitizeErrorMessage(resolveAnalyzerErrorMessage(err)));
     } finally {
       setLoading(false);
     }
@@ -356,6 +383,13 @@ export default function Home() {
               >
                 Analyzer
               </a>
+
+              <Link
+                href="/compare"
+                className="rounded-lg px-2 py-1 transition hover:text-purple-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+              >
+                Compare
+              </Link>
 
               <GitHubLink className="rounded-lg px-2 py-1 transition hover:text-purple-400" />
 
@@ -569,6 +603,7 @@ export default function Home() {
                       onChange={(e) => {
                         setUsername(e.target.value);
                         if (error) setError("");
+                        if (serviceError) setServiceError(null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !loading) {
@@ -615,8 +650,24 @@ export default function Home() {
                 </span>
               </div>
 
-              {/* Accessible Error Alert (WCAG 2.1 AA: Assertive live region) */}
-              {error && (
+              {/* Service Unavailable Banner (Issue #128) */}
+              {serviceError && (
+                <div className="mt-5">
+                  <ServiceUnavailableBanner
+                    title={serviceError.title}
+                    message={serviceError.message}
+                    statusCode={serviceError.statusCode}
+                    onRetry={() => analyzeProfile(lastAnalyzed || username)}
+                    onDismiss={() => setServiceError(null)}
+                    reportUrl={serviceError.reportUrl}
+                    theme={theme}
+                    isRetrying={loading}
+                  />
+                </div>
+              )}
+
+              {/* Accessible Error Alert (WCAG 2.1 AA: Assertive live region for validation/404/429) */}
+              {error && !serviceError && (
                 <div
                   id="analyzer-error"
                   role="alert"
@@ -691,7 +742,19 @@ export default function Home() {
                   </div>
 
                   {profile && (
-                    <ExportMenu onExport={handleExport} />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Link
+                        href={`/compare?user1=${encodeURIComponent(profile.username)}`}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition ${
+                          theme === "dark"
+                            ? "border-white/10 bg-white/5 text-gray-200 hover:bg-white/10"
+                            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        Compare Profile &rarr;
+                      </Link>
+                      <ExportMenu onExport={handleExport} />
+                    </div>
                   )}
                 </div>
 
@@ -823,6 +886,30 @@ export default function Home() {
                       </div>
                     )}
                   </div>
+
+                  {/* Subtle Demo data indicator banner */}
+                  {isDemoData && (
+                    <div
+                      role="note"
+                      className={`mt-4 flex items-start gap-3 rounded-2xl border p-4 text-xs ${
+                        theme === "dark"
+                          ? "border-cyan-500/20 bg-cyan-500/5 text-cyan-200"
+                          : "border-cyan-200 bg-cyan-50 text-cyan-900"
+                      }`}
+                    >
+                      <span className="text-base leading-none" aria-hidden="true">
+                        ℹ️
+                      </span>
+                      <div>
+                        <p className="font-semibold">
+                          Live matching service is currently in preview
+                        </p>
+                        <p className="mt-0.5 text-[11px] opacity-85">
+                          Displaying realistic open-source issues matched to your technical profile.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Filter Toolbar (Issue #47) */}
                   {recommendations.length > 0 && (
@@ -1031,7 +1118,12 @@ export default function Home() {
                   {!loadingMatching && filteredRecommendations.length > 0 && (
                     <div className="mt-6 space-y-4">
                       {filteredRecommendations.map((issue) => (
-                        <IssueCard key={issue.id} issue={issue} theme={theme} />
+                        <IssueCard
+                          key={issue.id}
+                          issue={issue}
+                          theme={theme}
+                          isMock={isDemoData}
+                        />
                       ))}
                     </div>
                   )}
@@ -1159,7 +1251,16 @@ export default function Home() {
             }`}
           >
             <p>© {new Date().getFullYear()} OpenSourceMate</p>
-            <p>Built for the open-source community.</p>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/privacy"
+                className="transition hover:text-purple-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 rounded"
+              >
+                Privacy & Data Handling
+              </Link>
+              <span>•</span>
+              <p>Built for the open-source community.</p>
+            </div>
             <GitHubLink className="transition hover:text-purple-400">
               View Repository ↗
             </GitHubLink>
@@ -1241,191 +1342,6 @@ function SkillCard({
         />
       </div>
     </div>
-  );
-}
-
-function IssueCard({
-  issue,
-  theme,
-}: {
-  issue: Recommendation;
-  theme?: "dark" | "light";
-}) {
-  const isGoodFirst = issue.labels?.some((l) =>
-    l.toLowerCase().includes("good first")
-  );
-  const isHelpWanted = issue.labels?.some((l) =>
-    l.toLowerCase().includes("help wanted")
-  );
-
-  const score = Math.round(issue.match_score ?? issue.score ?? 0);
-  const reasons = issue.match_reasons ?? issue.reasons ?? [];
-
-  const getScoreBadgeStyle = (val: number) => {
-    if (val >= 80)
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-    if (val >= 60) return "border-blue-500/30 bg-blue-500/10 text-blue-400";
-    return "border-purple-500/30 bg-purple-500/10 text-purple-400";
-  };
-
-  return (
-    <article
-      aria-label={`${issue.title} in ${issue.repository}`}
-      className={`rounded-2xl border p-5 transition hover:border-purple-500/30 ${
-        theme === "dark"
-          ? "border-white/10 bg-white/[0.02]"
-          : "border-gray-200 bg-white shadow-sm"
-      }`}
-    >
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span
-              className={`font-semibold ${
-                theme === "dark" ? "text-purple-400" : "text-purple-600"
-              }`}
-            >
-              {issue.repository}
-            </span>
-
-            {issue.language && (
-              <>
-                <span className="text-gray-500" aria-hidden="true">•</span>
-                <span
-                  className={
-                    theme === "dark" ? "text-gray-400" : "text-gray-600"
-                  }
-                >
-                  {issue.language}
-                </span>
-              </>
-            )}
-
-            {issue.comments > 0 && (
-              <>
-                <span className="text-gray-500" aria-hidden="true">•</span>
-                <span
-                  className={
-                    theme === "dark" ? "text-gray-400" : "text-gray-600"
-                  }
-                >
-                  {issue.comments} comments
-                </span>
-              </>
-            )}
-          </div>
-
-          <h4 className="mt-2 text-base font-semibold leading-snug">
-            <a
-              href={issue.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition hover:text-purple-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 rounded"
-            >
-              {issue.title}
-            </a>
-          </h4>
-
-          {issue.labels && issue.labels.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Issue labels">
-              {issue.labels.slice(0, 5).map((label, idx) => (
-                <span
-                  key={idx}
-                  className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
-                    isGoodFirst && label.toLowerCase().includes("good first")
-                      ? "border border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                      : isHelpWanted && label.toLowerCase().includes("help wanted")
-                      ? "border border-amber-400/30 bg-amber-400/10 text-amber-300"
-                      : theme === "dark"
-                      ? "border border-white/10 bg-white/5 text-gray-300"
-                      : "border border-gray-300 bg-white text-gray-700"
-                  }`}
-                >
-                  {label}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* AI-Generated Explanation */}
-          {issue.explanation && (
-            <div
-              className={`mt-4 rounded-xl border p-3.5 text-xs ${
-                theme === "dark"
-                  ? "border-purple-500/20 bg-purple-500/5 text-gray-200"
-                  : "border-purple-200 bg-purple-50 text-gray-800"
-              }`}
-            >
-              <div className="flex items-center gap-1.5 font-semibold text-purple-400">
-                <span aria-hidden="true">✦</span>
-                <span>Why this is recommended for you</span>
-                {issue.is_ai_generated && (
-                  <span
-                    className={`ml-1.5 rounded-full px-1.5 py-0.2 text-[9px] uppercase tracking-wider font-bold ${
-                      theme === "dark"
-                        ? "bg-purple-400/20 text-purple-300"
-                        : "bg-purple-200 text-purple-800"
-                    }`}
-                  >
-                    AI MATCH
-                  </span>
-                )}
-              </div>
-              <p
-                className={`mt-1 leading-relaxed ${
-                  theme === "dark" ? "text-gray-300" : "text-gray-700"
-                }`}
-              >
-                {issue.explanation}
-              </p>
-            </div>
-          )}
-
-          {reasons.length > 0 && (
-            <div
-              className={`mt-4 rounded-xl border p-3 text-xs ${
-                theme === "dark"
-                  ? "border-white/5 bg-white/[0.02] text-gray-300"
-                  : "border-gray-200 bg-white text-gray-700"
-              }`}
-            >
-              <p className="font-semibold text-purple-400">Why this matches:</p>
-              <ul className="mt-1.5 space-y-1">
-                {reasons.map((reason, i) => (
-                  <li key={i} className="flex items-center gap-1.5">
-                    <span className="text-purple-400" aria-hidden="true">✓</span>
-                    <span>{reason}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        <div className="flex shrink-0 flex-row items-center justify-between gap-3 sm:flex-col sm:items-end">
-          <div
-            className={`rounded-xl border px-3 py-1.5 text-center text-xs font-semibold ${getScoreBadgeStyle(
-              score
-            )}`}
-          >
-            <span className="text-sm font-bold sm:text-base">{score}%</span>
-            <span className="block text-[10px] uppercase tracking-wider text-gray-400">
-              Match
-            </span>
-          </div>
-
-          <a
-            href={issue.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Open issue "${issue.title}" on GitHub (opens in a new tab)`}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-gray-200 transition hover:bg-white hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
-          >
-            View on GitHub ↗
-          </a>
-        </div>
-      </div>
-    </article>
   );
 }
 

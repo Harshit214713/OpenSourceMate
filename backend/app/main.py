@@ -12,6 +12,9 @@ from app.api.routes.issues import router as issues_router
 from app.api.routes.matching import router as matching_router
 from app.config import get_settings
 from app.exceptions import APIException
+from app.schemas.openapi_serializers import (
+    ApiVersionOverviewSerializer,
+)
 from app.schemas.serializers import (
     HealthDiagnosticsSerializer,
     HealthResponseSerializer,
@@ -31,15 +34,70 @@ async def lifespan(app: FastAPI):
     await close_client()
 
 
+from app.middleware.logging import StructuredLoggingMiddleware
+from app.utils.logging import setup_structured_logging
+
 settings = get_settings()
+setup_structured_logging(level=settings.log_level)
+
+tags_metadata = [
+    {
+        "name": "Health",
+        "description": "System health monitoring, status indicators, and upstream service diagnostics.",
+    },
+    {
+        "name": "GitHub",
+        "description": "GitHub profile analysis, repository ingestion, and technical skill extraction.",
+    },
+    {
+        "name": "Matching",
+        "description": "Matching algorithm mapping developer competencies to open-source contribution opportunities.",
+    },
+    {
+        "name": "Issues",
+        "description": "Open-source issues search, retrieval, and metadata filters.",
+    },
+    {
+        "name": "AI",
+        "description": "Generative AI personalized recommendation explanations.",
+    },
+]
 
 app = FastAPI(
     title="OpenSourceMate API",
-    description="AI-powered open-source contribution assistant",
-    version="0.1.0",
+    description="""
+# OpenSourceMate REST API
+
+An AI-powered open-source contribution assistant that analyzes developer GitHub profiles
+and provides personalized repository and issue recommendations.
+
+## API Versioning
+All primary API endpoints are accessible with the `/api/v1/` prefix as well as legacy `/api/` paths
+for backward compatibility.
+
+## Interactive Documentation
+* **Swagger UI:** [/docs](/docs)
+* **ReDoc:** [/redoc](/redoc)
+* **OpenAPI Specification:** [/openapi.json](/openapi.json)
+    """,
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    openapi_tags=tags_metadata,
     debug=settings.debug,
     lifespan=lifespan,
+    contact={
+        "name": "OpenSourceMate Team",
+        "url": "https://github.com/Muskankr/OpenSourceMate",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
 )
+
+app.add_middleware(StructuredLoggingMiddleware)
 
 if settings.allowed_hosts and "*" not in settings.allowed_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
@@ -144,13 +202,85 @@ async def github_rate_limit_handler(request: Request, exc: GitHubRateLimitError)
 # Health Endpoints
 # ---------------------------------------------------------
 @app.get(
+    "/api",
+    response_model=ApiVersionOverviewSerializer,
+    tags=["Health"],
+    summary="API discovery and version overview",
+)
+@app.get(
+    "/api/v1",
+    response_model=ApiVersionOverviewSerializer,
+    tags=["Health"],
+    summary="API v1 discovery and endpoint directory",
+)
+async def api_version_directory():
+    """Discover available API versions, endpoints, and links to documentation."""
+    return {
+        "service": "OpenSourceMate API",
+        "current_version": "/api/v1",
+        "available_versions": [
+            {
+                "prefix": "/api/v1",
+                "status": "stable",
+                "is_default": True,
+                "resources": [
+                    "/api/v1/health",
+                    "/api/v1/health/diagnostics",
+                    "/api/v1/github/users/{username}",
+                    "/api/v1/github/users/{username}/skills",
+                    "/api/v1/github/users/{username}/repositories",
+                    "/api/v1/matching/users/{username}/issues",
+                    "/api/v1/issues/search",
+                    "/api/v1/ai/analyze-issue",
+                ],
+            },
+            {
+                "prefix": "/api",
+                "status": "legacy-compatible",
+                "is_default": False,
+                "resources": [
+                    "/api/health",
+                    "/api/health/diagnostics",
+                    "/api/github/users/{username}",
+                    "/api/github/users/{username}/skills",
+                    "/api/github/users/{username}/repositories",
+                    "/api/matching/users/{username}/issues",
+                    "/api/issues/search",
+                    "/api/ai/analyze-issue",
+                ],
+            },
+        ],
+        "documentation": {
+            "title": "OpenSourceMate API",
+            "version": "1.0.0",
+            "docs_url": "/docs",
+            "redoc_url": "/redoc",
+            "openapi_url": "/openapi.json",
+            "tags": [t["name"] for t in tags_metadata],
+        },
+    }
+
+
+@app.get(
     "/api/health",
     response_model=HealthResponseSerializer,
     tags=["Health"],
     summary="Health check",
 )
 @app.get(
+    "/api/v1/health",
+    response_model=HealthResponseSerializer,
+    tags=["Health"],
+    summary="Health check (v1)",
+)
+@app.get(
     "/api/health/",
+    response_model=HealthResponseSerializer,
+    tags=["Health"],
+    include_in_schema=False,
+)
+@app.get(
+    "/api/v1/health/",
     response_model=HealthResponseSerializer,
     tags=["Health"],
     include_in_schema=False,
@@ -171,7 +301,19 @@ async def health_check():
     summary="Health diagnostics",
 )
 @app.get(
+    "/api/v1/health/diagnostics",
+    response_model=HealthDiagnosticsSerializer,
+    tags=["Health"],
+    summary="Health diagnostics (v1)",
+)
+@app.get(
     "/api/health/diagnostics/",
+    response_model=HealthDiagnosticsSerializer,
+    tags=["Health"],
+    include_in_schema=False,
+)
+@app.get(
+    "/api/v1/health/diagnostics/",
     response_model=HealthDiagnosticsSerializer,
     tags=["Health"],
     include_in_schema=False,
@@ -192,9 +334,16 @@ async def health_diagnostics():
 
 
 # ---------------------------------------------------------
-# Routers
+# Routers (Dual-mounted: /api/ and /api/v1/ for compatibility)
 # ---------------------------------------------------------
-app.include_router(github_router)
-app.include_router(issues_router)
-app.include_router(ai_router)
-app.include_router(matching_router)
+# v1 Prefix Routers
+app.include_router(github_router, prefix="/api/v1", include_in_schema=True)
+app.include_router(issues_router, prefix="/api/v1", include_in_schema=True)
+app.include_router(ai_router, prefix="/api/v1", include_in_schema=True)
+app.include_router(matching_router, prefix="/api/v1", include_in_schema=True)
+
+# Legacy /api/ Routers (Backward Compatibility)
+app.include_router(github_router, prefix="/api", include_in_schema=False)
+app.include_router(issues_router, prefix="/api", include_in_schema=False)
+app.include_router(ai_router, prefix="/api", include_in_schema=False)
+app.include_router(matching_router, prefix="/api", include_in_schema=False)

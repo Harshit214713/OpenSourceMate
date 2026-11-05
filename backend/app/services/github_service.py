@@ -8,6 +8,9 @@ import httpx
 
 from app.cache import TTLCache
 from app.config import get_settings
+from app.utils.logging import get_logger, sanitize_sensitive_data
+
+logger = get_logger("app.services.github")
 
 GITHUB_API_URL = "https://api.github.com"
 
@@ -77,9 +80,29 @@ async def github_get(url: str, params: dict | None = None) -> httpx.Response:
 
     Raises GitHubRateLimitError when GitHub reports the rate limit is hit.
     """
+    logger.debug(
+        f"Calling external GitHub API: {url}",
+        extra={
+            "structured_data": {
+                "event": "github_api_call",
+                "url": url,
+                "params": sanitize_sensitive_data(params or {}),
+            }
+        },
+    )
     response = await get_client().get(url, params=params)
 
     if _is_rate_limited(response):
+        logger.warning(
+            f"GitHub API rate limit exceeded on {url}",
+            extra={
+                "structured_data": {
+                    "event": "github_rate_limited",
+                    "status_code": response.status_code,
+                    "remaining": response.headers.get("X-RateLimit-Remaining"),
+                }
+            },
+        )
         raise GitHubRateLimitError(_rate_limit_reset(response))
 
     return response

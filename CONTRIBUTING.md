@@ -25,7 +25,10 @@ Thank you for your interest in contributing to **OpenSourceMate**! OpenSourceMat
 
 ---
 
-## Not sure where to start? Read the [Label Guide](docs/LABELS.md).
+## Not sure where to start? Read the [Label Guide](docs/LABELS.md) and check our [Roadmap](ROADMAP.md).
+
+> 🐣 **First time contributing to open source or Git?** Check out our step-by-step [First Contribution Guide](FIRST_CONTRIBUTION.md) designed specifically for beginners!
+
 
 ## Code of Conduct
 

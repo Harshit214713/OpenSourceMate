@@ -1,7 +1,5 @@
 "use client";
 
-import React from "react";
-
 export interface RecentSearchesProps {
   searches: string[];
   onSelect: (username: string) => void;
